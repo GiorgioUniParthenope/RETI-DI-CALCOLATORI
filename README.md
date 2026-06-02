@@ -5,10 +5,10 @@ Applicazione client/server parallela sviluppata in Java per simulare la gestione
 La traccia considerata e' quella per gruppo da 1 studente: ogni cliente occupa un tavolo distinto. Il sistema e' composto da tre programmi separati:
 
 - `PubServer`: gestisce i tavoli disponibili e prepara gli ordini.
-- `WaiterServer`: riceve i clienti, chiede al pub se ci sono posti e inoltra gli ordini.
+- `WaiterServer`: riceve i clienti, chiede al pub se ci sono posti, inoltra gli ordini e offre una dashboard cameriere.
 - `CustomerClient`: simula il cliente che entra, richiede il menu ed effettua un ordine.
 - `CustomerGuiClient`: variante grafica Swing del client cliente.
-- `CustomerWebApp`: webapp locale per usare il client dal browser.
+- `CustomerWebApp`: webapp locale per usare piu' clienti dal browser.
 
 ## Requisiti
 
@@ -44,7 +44,7 @@ java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5 -
 Terminale 2 - avvio del cameriere:
 
 ```bash
-java -cp out it.uniparthenope.reti.pub.server.WaiterServer --port 6000 --pub-host localhost --pub-port 5000
+java -cp out it.uniparthenope.reti.pub.server.WaiterServer --port 6000 --pub-host localhost --pub-port 5000 --dashboard-port 7200
 ```
 
 Terminale 3 - avvio della webapp:
@@ -65,7 +65,15 @@ Dashboard lato pub:
 http://localhost:7100
 ```
 
+Dashboard cameriere:
+
+```text
+http://localhost:7200
+```
+
 Le due pagine web sono responsive e possono essere usate anche da tablet o smartphone.
+
+La webapp clienti permette di far entrare piu' clienti: ogni cliente riceve un tavolo diverso. La dashboard cameriere consente di selezionare il tavolo corrente e cambiare tavolo prima di inviare un ordine. La dashboard pub permette di evadere manualmente gli ordini in preparazione.
 
 Con `make`:
 
@@ -86,7 +94,7 @@ java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5 -
 Terminale 2 - avvio del cameriere:
 
 ```bash
-java -cp out it.uniparthenope.reti.pub.server.WaiterServer --port 6000 --pub-host localhost --pub-port 5000
+java -cp out it.uniparthenope.reti.pub.server.WaiterServer --port 6000 --pub-host localhost --pub-port 5000 --dashboard-port 7200
 ```
 
 Terminale 3 - client automatico:
@@ -126,6 +134,7 @@ Comandi disponibili nel client interattivo:
 - Cameriere: `6000`
 - Webapp: `7000`
 - Dashboard pub: `7100`
+- Dashboard cameriere: `7200`
 
 ## Documentazione
 

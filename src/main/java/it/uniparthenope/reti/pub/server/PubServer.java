@@ -6,14 +6,19 @@ import it.uniparthenope.reti.pub.common.CommandLineArgs;
 import it.uniparthenope.reti.pub.common.Menu;
 import it.uniparthenope.reti.pub.common.Message;
 import it.uniparthenope.reti.pub.common.SocketLine;
+import it.uniparthenope.reti.pub.common.WebAssets;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
@@ -124,11 +129,11 @@ public final class PubServer {
 
         int preparationMs = ThreadLocalRandom.current().nextInt(1200, 3501);
         log("Preparazione ordine tavolo " + table + ": " + normalizedItem);
-        dashboard.orderPreparing(table, normalizedItem);
+        PendingOrder pendingOrder = dashboard.orderPreparing(table, normalizedItem);
         // Il tempo casuale simula la preparazione reale senza bloccare gli altri thread.
-        Thread.sleep(preparationMs);
+        pendingOrder.awaitCompletion(preparationMs);
         log("Ordine pronto tavolo " + table + ": " + normalizedItem);
-        dashboard.orderReady(table, normalizedItem, preparationMs);
+        dashboard.orderReady(table, normalizedItem, preparationMs, pendingOrder.completedManually());
 
         return Message.builder("ORDER_READY")
                 .put("table", table)
@@ -147,6 +152,8 @@ public final class PubServer {
 
     private static final class PubDashboard {
         private final Map<Integer, TableReceipt> receipts = new LinkedHashMap<>();
+        private final Map<String, PendingOrder> pendingOrders = new HashMap<>();
+        private final AtomicInteger orderCounter = new AtomicInteger(0);
         private final int tableCount;
 
         private PubDashboard(int tableCount) {
@@ -160,6 +167,8 @@ public final class PubServer {
             HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
             server.createContext("/", this::handleIndex);
             server.createContext("/api/state", this::handleState);
+            server.createContext("/api/complete", this::handleComplete);
+            server.createContext(WebAssets.HERO_PATH, WebAssets::sendHeroImage);
             server.setExecutor(Executors.newCachedThreadPool());
             server.start();
         }
@@ -182,6 +191,29 @@ public final class PubServer {
             sendJson(exchange, 200, stateJson());
         }
 
+        private void handleComplete(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"ok\":false,\"message\":\"Metodo non consentito\"}");
+                return;
+            }
+
+            Map<String, String> form = readForm(exchange);
+            String orderId = form.get("orderId");
+            PendingOrder pendingOrder;
+
+            synchronized (this) {
+                pendingOrder = pendingOrders.get(orderId);
+            }
+
+            if (pendingOrder == null) {
+                sendJson(exchange, 200, "{\"ok\":false,\"message\":\"Ordine non trovato o gia' evaso\"}");
+                return;
+            }
+
+            pendingOrder.completeManually();
+            sendJson(exchange, 200, "{\"ok\":true,\"message\":\"Ordine evaso\"}");
+        }
+
         private synchronized void customerSeated(int table, String customerName) {
             TableReceipt receipt = new TableReceipt(table, customerName);
             receipt.status = "Cliente al tavolo";
@@ -189,16 +221,24 @@ public final class PubServer {
             receipts.put(table, receipt);
         }
 
-        private synchronized void orderPreparing(int table, String item) {
+        private synchronized PendingOrder orderPreparing(int table, String item) {
             TableReceipt receipt = receiptFor(table);
+            String orderId = "ORD-" + orderCounter.incrementAndGet();
+            PendingOrder pendingOrder = new PendingOrder();
+            pendingOrders.put(orderId, pendingOrder);
             receipt.status = "Ordine in preparazione";
+            receipt.pendingOrderId = orderId;
             receipt.add("Ordine", item + " in preparazione");
+            return pendingOrder;
         }
 
-        private synchronized void orderReady(int table, String item, int preparationMs) {
+        private synchronized void orderReady(int table, String item, int preparationMs, boolean manual) {
             TableReceipt receipt = receiptFor(table);
+            pendingOrders.remove(receipt.pendingOrderId);
+            receipt.pendingOrderId = "";
             receipt.status = "Ordine pronto";
-            receipt.add("Cucina", item + " pronto dopo " + preparationMs + " ms");
+            String suffix = manual ? " evaso manualmente dal pub" : " pronto dopo " + preparationMs + " ms";
+            receipt.add("Cucina", item + suffix);
         }
 
         private synchronized void tableReleased(int table) {
@@ -230,6 +270,7 @@ public final class PubServer {
                         .append("\"occupied\":").append(receipt.occupied).append(",")
                         .append("\"customer\":\"").append(jsonEscape(receipt.customerName)).append("\",")
                         .append("\"status\":\"").append(jsonEscape(receipt.status)).append("\",")
+                        .append("\"pendingOrderId\":\"").append(jsonEscape(receipt.pendingOrderId)).append("\",")
                         .append("\"lines\":[");
 
                 for (int lineIndex = 0; lineIndex < receipt.lines.size(); lineIndex++) {
@@ -258,12 +299,13 @@ public final class PubServer {
                     + "<meta charset=\"utf-8\">"
                     + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
                     + "<title>Dashboard Pub</title>"
+                    + "<link rel=\"icon\" href=\"" + WebAssets.faviconDataUri() + "\">"
                     + "<style>"
                     + ":root{--bg:#f3f1ea;--ink:#20231f;--muted:#73756d;--green:#315f4c;--line:#d9d3c4;--paper:#fffdf6;--ready:#b95d3f;--wait:#465b8a;}"
                     + "*{box-sizing:border-box}html{min-height:100%}body{min-height:100vh;margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;letter-spacing:0;}"
-                    + ".top{background:#283b32;color:#fff;padding:22px 26px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}.top>div:first-child{min-width:0}.top h1{margin:0;font-size:27px;line-height:1.15;overflow-wrap:anywhere}.top p{margin:6px 0 0;color:#e6ece5;line-height:1.35}.clock{border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:9px 12px;color:#ffdfad;font-weight:700;white-space:nowrap}"
+                    + ".top{min-height:190px;background:linear-gradient(90deg,rgba(24,35,30,.9),rgba(24,35,30,.58)),url('" + WebAssets.HERO_PATH + "') center/cover;color:#fff;padding:24px 26px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}.top>div:first-child{min-width:0}.top h1{margin:0;font-size:30px;line-height:1.15;overflow-wrap:anywhere}.top p{margin:6px 0 0;color:#e6ece5;line-height:1.35}.clock{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:9px 12px;color:#ffdfad;font-weight:700;white-space:nowrap}"
                     + ".wrap{width:100%;max-width:1180px;margin:0 auto;padding:22px}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}.metric{min-width:0;background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px}.metric span{display:block;color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase}.metric strong{font-size:25px;margin-top:4px;display:block;overflow-wrap:anywhere}"
-                    + ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.receipt{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 0 rgba(0,0,0,.05);padding:16px;min-height:230px}.receipt.active{border-color:#8da892}.receipt h2{margin:0;font-size:20px;line-height:1.2}.receipt .head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border-bottom:1px dashed #bbb3a2;padding-bottom:10px;margin-bottom:10px}.status{max-width:100%;font-size:12px;font-weight:700;border-radius:20px;padding:6px 9px;background:#ece9dd;color:#4a4d46;overflow-wrap:anywhere}.active .status{background:#e3efe6;color:#23523f}.line{min-width:0;display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px dashed #ddd5c5}.line:last-child{border-bottom:0}.time{color:var(--muted);font-size:12px}.line strong{display:block;font-size:13px;overflow-wrap:anywhere}.line span{display:block;font-size:14px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}.empty{color:var(--muted);padding:20px 0}.customer{color:var(--muted);font-size:13px;margin-top:4px;overflow-wrap:anywhere}"
+                    + ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.receipt{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:0 2px 0 rgba(0,0,0,.05);padding:16px;min-height:230px}.receipt.active{border-color:#8da892}.receipt h2{margin:0;font-size:20px;line-height:1.2}.receipt .head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border-bottom:1px dashed #bbb3a2;padding-bottom:10px;margin-bottom:10px}.status{max-width:100%;font-size:12px;font-weight:700;border-radius:20px;padding:6px 9px;background:#ece9dd;color:#4a4d46;overflow-wrap:anywhere}.active .status{background:#e3efe6;color:#23523f}.line{min-width:0;display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px dashed #ddd5c5}.line:last-child{border-bottom:0}.time{color:var(--muted);font-size:12px}.line strong{display:block;font-size:13px;overflow-wrap:anywhere}.line span{display:block;font-size:14px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}.empty{color:var(--muted);padding:20px 0}.customer{color:var(--muted);font-size:13px;margin-top:4px;overflow-wrap:anywhere}.complete{width:100%;margin-top:12px;min-height:42px;border:0;border-radius:6px;background:var(--ready);color:#fff;font-weight:700;cursor:pointer}.complete:disabled{background:#aaa;cursor:not-allowed}"
                     + "@media(max-width:760px){.top{align-items:flex-start;flex-direction:column;padding:18px 14px}.clock{white-space:normal}.wrap{padding:14px}.summary{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.receipt{padding:14px}}"
                     + "@media(max-width:420px){.receipt .head{flex-direction:column}.status{align-self:flex-start}.line{grid-template-columns:1fr;gap:4px}.metric strong{font-size:22px}}"
                     + "</style>"
@@ -281,7 +323,9 @@ public final class PubServer {
                     + "<script>"
                     + "const $=id=>document.getElementById(id);"
                     + "function esc(v){return String(v||'').replace(/[&<>\\\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}"
-                    + "function draw(data){$('tables').textContent=data.tableCount;let occupied=0,orders=0;const cards=data.tables.map(t=>{if(t.occupied)occupied++;orders+=t.lines.filter(l=>l.title==='Ordine').length;const lines=t.lines.length?t.lines.map(l=>'<div class=\"line\"><div class=\"time\">'+esc(l.time)+'</div><div><strong>'+esc(l.title)+'</strong><span>'+esc(l.text)+'</span></div></div>').join(''):'<div class=\"empty\">Nessuna operazione registrata.</div>';return '<article class=\"receipt '+(t.occupied?'active':'')+'\"><div class=\"head\"><div><h2>Tavolo '+t.table+'</h2><div class=\"customer\">'+(t.customer?esc(t.customer):'Libero')+'</div></div><div class=\"status\">'+esc(t.status)+'</div></div>'+lines+'</article>';}).join('');$('occupied').textContent=occupied;$('orders').textContent=orders;$('receipts').innerHTML=cards;}"
+                    + "function draw(data){$('tables').textContent=data.tableCount;let occupied=0,orders=0;const cards=data.tables.map(t=>{if(t.occupied)occupied++;orders+=t.lines.filter(l=>l.title==='Ordine').length;const lines=t.lines.length?t.lines.map(l=>'<div class=\"line\"><div class=\"time\">'+esc(l.time)+'</div><div><strong>'+esc(l.title)+'</strong><span>'+esc(l.text)+'</span></div></div>').join(''):'<div class=\"empty\">Nessuna operazione registrata.</div>';const action=t.pendingOrderId?'<button class=\"complete\" data-order=\"'+esc(t.pendingOrderId)+'\">Evadi ordine</button>':'';return '<article class=\"receipt '+(t.occupied?'active':'')+'\"><div class=\"head\"><div><h2>Tavolo '+t.table+'</h2><div class=\"customer\">'+(t.customer?esc(t.customer):'Libero')+'</div></div><div class=\"status\">'+esc(t.status)+'</div></div>'+lines+action+'</article>';}).join('');$('occupied').textContent=occupied;$('orders').textContent=orders;$('receipts').innerHTML=cards;}"
+                    + "async function completeOrder(orderId){const body=new URLSearchParams();body.append('orderId',orderId);await fetch('/api/complete',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});refresh();}"
+                    + "$('receipts').addEventListener('click',e=>{const b=e.target.closest('button[data-order]');if(b){b.disabled=true;completeOrder(b.dataset.order);}});"
                     + "async function refresh(){try{const res=await fetch('/api/state');draw(await res.json());}catch(e){}}"
                     + "function tick(){$('clock').textContent=new Date().toLocaleTimeString();}"
                     + "tick();refresh();setInterval(tick,1000);setInterval(refresh,1000);"
@@ -310,6 +354,50 @@ public final class PubServer {
             exchange.getResponseBody().write(bytes);
             exchange.close();
         }
+
+        private Map<String, String> readForm(HttpExchange exchange) throws IOException {
+            String body = readRequestBody(exchange.getRequestBody());
+            Map<String, String> values = new HashMap<>();
+
+            if (body.trim().isEmpty()) {
+                return values;
+            }
+
+            String[] pairs = body.split("&");
+            for (String pair : pairs) {
+                int separator = pair.indexOf('=');
+                if (separator < 0) {
+                    values.put(decode(pair), "");
+                } else {
+                    values.put(
+                            decode(pair.substring(0, separator)),
+                            decode(pair.substring(separator + 1))
+                    );
+                }
+            }
+
+            return values;
+        }
+
+        private String readRequestBody(InputStream inputStream) throws IOException {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int count;
+
+            while ((count = inputStream.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
+
+        private String decode(String value) {
+            try {
+                return URLDecoder.decode(value, "UTF-8");
+            } catch (UnsupportedEncodingException ex) {
+                throw new IllegalStateException("Codifica UTF-8 non disponibile", ex);
+            }
+        }
     }
 
     private static final class TableReceipt {
@@ -317,6 +405,7 @@ public final class PubServer {
         private final List<ReceiptLine> lines = new ArrayList<>();
         private String customerName;
         private String status;
+        private String pendingOrderId = "";
         private boolean occupied;
 
         private TableReceipt(int table, String customerName) {
@@ -335,6 +424,32 @@ public final class PubServer {
 
         private void add(String title, String text) {
             lines.add(new ReceiptLine(LOG_FORMAT.format(LocalDateTime.now()), title, text));
+        }
+    }
+
+    private static final class PendingOrder {
+        private boolean completed;
+        private boolean completedManually;
+
+        private synchronized void awaitCompletion(int timeoutMs) throws InterruptedException {
+            long deadline = System.currentTimeMillis() + timeoutMs;
+            long remaining = timeoutMs;
+
+            while (!completed && remaining > 0) {
+                wait(remaining);
+                remaining = deadline - System.currentTimeMillis();
+            }
+            completed = true;
+        }
+
+        private synchronized void completeManually() {
+            completed = true;
+            completedManually = true;
+            notifyAll();
+        }
+
+        private synchronized boolean completedManually() {
+            return completedManually;
         }
     }
 

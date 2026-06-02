@@ -14,6 +14,8 @@ Oltre al client testuale sono presenti un client grafico Swing e una webapp loca
 
 Il `PubServer` espone anche una dashboard HTTP lato server. La dashboard non sostituisce le socket: mostra in modo grafico le operazioni del pub usando ricevute per tavolo.
 
+Il `WaiterServer` espone una dashboard HTTP lato cameriere. Da questa pagina il cameriere vede i tavoli occupati, seleziona il tavolo corrente, puo' cambiare tavolo in qualsiasi momento e invia l'ordinazione scelta al pub.
+
 Le interfacce web sono responsive: il layout si adatta a desktop, tablet e schermi stretti usando griglie fluide e controlli a larghezza piena sui dispositivi mobili.
 
 Il cliente non comunica direttamente con il pub. La comunicazione passa dal cameriere, che svolge il ruolo di server intermedio:
@@ -46,9 +48,13 @@ Con la webapp viene aggiunto un piccolo server HTTP locale:
 +---------+                    +----------------+                           +----------------+                         +-------------+
 ```
 
-Il `PubServer` espone inoltre una pagina HTTP di monitoraggio:
+Il cameriere e il pub espongono inoltre pagine HTTP di monitoraggio e gestione:
 
 ```text
++---------+        HTTP        +-----------------------+
+| Browser | <----------------> | Dashboard WaiterServer|
++---------+                    +-----------------------+
+
 +---------+        HTTP        +----------------------+
 | Browser | <----------------> | Dashboard PubServer  |
 +---------+                    +----------------------+
@@ -67,11 +73,15 @@ Lo stato dei tavoli e' mantenuto nella classe interna `PubState`. I metodi che m
 
 La classe interna `PubDashboard` mantiene una ricevuta per ogni tavolo. Quando un cliente entra, la ricevuta indica il tavolo assegnato; quando arriva un ordine, la dashboard mostra prima la preparazione e poi l'ordine pronto; quando il cliente esce, la ricevuta viene chiusa con il tavolo liberato.
 
+Quando un ordine e' in preparazione, la dashboard del pub mostra un pulsante di evasione. Premendo `Evadi ordine`, il server completa manualmente la richiesta senza attendere il termine del tempo casuale.
+
 ### WaiterServer
 
 Il `WaiterServer` rimane in ascolto per i client. Per ogni cliente accettato crea un nuovo thread, quindi piu' clienti possono essere serviti in parallelo.
 
 Il cameriere conserva lo stato della sessione del cliente, in particolare il tavolo assegnato. Quando riceve un ordine valido, apre una connessione verso il pub, invia la richiesta di preparazione e attende la risposta.
+
+La dashboard del cameriere usa lo stesso stato delle sessioni attive. Il cameriere puo' passare da un tavolo all'altro selezionando una scheda tavolo e inviando l'ordine per il tavolo scelto.
 
 ### CustomerClient
 
@@ -98,10 +108,11 @@ Il `CustomerWebApp` espone una pagina web locale tramite `HttpServer`, classe in
 La pagina consente di:
 
 - inserire host, porta e nome cliente;
-- entrare nel pub;
-- caricare il menu;
+- far entrare piu' clienti;
+- assegnare automaticamente tavoli diversi ai clienti accettati;
+- caricare il menu per ogni cliente;
 - scegliere un piatto da una lista;
-- inviare l'ordine;
+- inviare un ordine per il cliente selezionato;
 - visualizzare stato, tavolo assegnato ed esito dell'operazione;
 - uscire dal pub liberando il tavolo.
 
@@ -241,6 +252,19 @@ Parametri:
 - `--port`: porta TCP su cui il cameriere accetta i client;
 - `--pub-host`: indirizzo del server pub;
 - `--pub-port`: porta TCP del server pub.
+- `--dashboard-port`: porta HTTP della dashboard cameriere.
+
+Esempio con dashboard:
+
+```bash
+java -cp out it.uniparthenope.reti.pub.server.WaiterServer --port 6000 --pub-host localhost --pub-port 5000 --dashboard-port 7200
+```
+
+Dashboard:
+
+```text
+http://localhost:7200
+```
 
 ### Esecuzione del cliente automatico
 
