@@ -12,6 +12,8 @@ Il progetto realizza una applicazione client/server parallela per la gestione se
 
 Oltre al client testuale sono presenti un client grafico Swing e una webapp locale. La webapp e' la modalita' piu' comoda per la dimostrazione: il browser invia richieste HTTP al processo `CustomerWebApp`, che a sua volta comunica con il cameriere tramite socket TCP.
 
+Il `PubServer` espone anche una dashboard HTTP lato server. La dashboard non sostituisce le socket: mostra in modo grafico le operazioni del pub usando ricevute per tavolo.
+
 Il cliente non comunica direttamente con il pub. La comunicazione passa dal cameriere, che svolge il ruolo di server intermedio:
 
 1. il cliente chiede al cameriere di entrare;
@@ -42,6 +44,14 @@ Con la webapp viene aggiunto un piccolo server HTTP locale:
 +---------+                    +----------------+                           +----------------+                         +-------------+
 ```
 
+Il `PubServer` espone inoltre una pagina HTTP di monitoraggio:
+
+```text
++---------+        HTTP        +----------------------+
+| Browser | <----------------> | Dashboard PubServer  |
++---------+                    +----------------------+
+```
+
 ### PubServer
 
 Il `PubServer` e' il server principale del pub. Rimane in ascolto su una porta TCP, accetta connessioni dal cameriere e gestisce:
@@ -52,6 +62,8 @@ Il `PubServer` e' il server principale del pub. Rimane in ascolto su una porta T
 - liberazione del tavolo quando il cliente esce.
 
 Lo stato dei tavoli e' mantenuto nella classe interna `PubState`. I metodi che modificano o leggono lo stato condiviso sono `synchronized`, in modo da evitare condizioni di race quando piu' richieste arrivano contemporaneamente.
+
+La classe interna `PubDashboard` mantiene una ricevuta per ogni tavolo. Quando un cliente entra, la ricevuta indica il tavolo assegnato; quando arriva un ordine, la dashboard mostra prima la preparazione e poi l'ordine pronto; quando il cliente esce, la ricevuta viene chiusa con il tavolo liberato.
 
 ### WaiterServer
 
@@ -88,7 +100,7 @@ La pagina consente di:
 - caricare il menu;
 - scegliere un piatto da una lista;
 - inviare l'ordine;
-- visualizzare stato, tavolo assegnato e log;
+- visualizzare stato, tavolo assegnato ed esito dell'operazione;
 - uscire dal pub liberando il tavolo.
 
 Le API HTTP della webapp traducono ogni azione del browser in un messaggio del protocollo socket verso il cameriere.
@@ -202,6 +214,19 @@ Parametri:
 
 - `--port`: porta TCP del server pub;
 - `--tables`: numero di tavoli disponibili.
+- `--dashboard-port`: porta HTTP della dashboard lato pub.
+
+Esempio con dashboard:
+
+```bash
+java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5 --dashboard-port 7100
+```
+
+Dashboard:
+
+```text
+http://localhost:7100
+```
 
 ### Esecuzione del cameriere
 

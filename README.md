@@ -38,7 +38,7 @@ Aprire tre terminali.
 Terminale 1 - avvio del pub:
 
 ```bash
-java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5
+java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5 --dashboard-port 7100
 ```
 
 Terminale 2 - avvio del cameriere:
@@ -59,6 +59,12 @@ Poi aprire il browser su:
 http://localhost:7000
 ```
 
+Dashboard lato pub:
+
+```text
+http://localhost:7100
+```
+
 Con `make`:
 
 ```bash
@@ -72,7 +78,7 @@ Aprire tre terminali.
 Terminale 1 - avvio del pub:
 
 ```bash
-java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5
+java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5 --dashboard-port 7100
 ```
 
 Terminale 2 - avvio del cameriere:
@@ -117,6 +123,7 @@ Comandi disponibili nel client interattivo:
 - Pub: `5000`
 - Cameriere: `6000`
 - Webapp: `7000`
+- Dashboard pub: `7100`
 
 ## Documentazione
 
