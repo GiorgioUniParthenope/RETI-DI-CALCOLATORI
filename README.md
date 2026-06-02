@@ -8,6 +8,7 @@ La traccia considerata e' quella per gruppo da 1 studente: ogni cliente occupa u
 - `WaiterServer`: riceve i clienti, chiede al pub se ci sono posti e inoltra gli ordini.
 - `CustomerClient`: simula il cliente che entra, richiede il menu ed effettua un ordine.
 - `CustomerGuiClient`: variante grafica Swing del client cliente.
+- `CustomerWebApp`: webapp locale per usare il client dal browser.
 
 ## Requisiti
 
@@ -30,7 +31,41 @@ mkdir -p out
 javac -encoding UTF-8 -d out $(find src/main/java -name "*.java")
 ```
 
-## Esecuzione
+## Esecuzione consigliata con webapp
+
+Aprire tre terminali.
+
+Terminale 1 - avvio del pub:
+
+```bash
+java -cp out it.uniparthenope.reti.pub.server.PubServer --port 5000 --tables 5
+```
+
+Terminale 2 - avvio del cameriere:
+
+```bash
+java -cp out it.uniparthenope.reti.pub.server.WaiterServer --port 6000 --pub-host localhost --pub-port 5000
+```
+
+Terminale 3 - avvio della webapp:
+
+```bash
+java -cp out it.uniparthenope.reti.pub.client.CustomerWebApp --port 7000 --waiter-host localhost --waiter-port 6000 --name Giorgio
+```
+
+Poi aprire il browser su:
+
+```text
+http://localhost:7000
+```
+
+Con `make`:
+
+```bash
+make web
+```
+
+## Esecuzione da terminale
 
 Aprire tre terminali.
 
@@ -81,6 +116,7 @@ Comandi disponibili nel client interattivo:
 
 - Pub: `5000`
 - Cameriere: `6000`
+- Webapp: `7000`
 
 ## Documentazione
 

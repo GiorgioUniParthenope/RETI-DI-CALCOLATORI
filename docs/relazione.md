@@ -10,7 +10,7 @@ Traccia: Pub
 
 Il progetto realizza una applicazione client/server parallela per la gestione semplificata di un pub. La simulazione segue la traccia per gruppo da 1 studente, quindi ogni tavolo puo' ospitare un solo cliente.
 
-Oltre al client testuale e' presente anche un client grafico Swing. La GUI non cambia l'architettura del sistema: usa gli stessi messaggi e le stesse socket TCP del client da terminale.
+Oltre al client testuale sono presenti un client grafico Swing e una webapp locale. La webapp e' la modalita' piu' comoda per la dimostrazione: il browser invia richieste HTTP al processo `CustomerWebApp`, che a sua volta comunica con il cameriere tramite socket TCP.
 
 Il cliente non comunica direttamente con il pub. La comunicazione passa dal cameriere, che svolge il ruolo di server intermedio:
 
@@ -32,6 +32,14 @@ L'architettura e' composta da tre processi Java distinti.
 | CustomerGui    |                           |                |                           |                |
 +----------------+                           +----------------+                           +----------------+
        client                                      server/client                                server
+```
+
+Con la webapp viene aggiunto un piccolo server HTTP locale:
+
+```text
++---------+        HTTP        +----------------+        socket TCP        +----------------+        socket TCP        +-------------+
+| Browser | <----------------> | CustomerWebApp | <----------------------> |  WaiterServer  | <---------------------> |  PubServer  |
++---------+                    +----------------+                           +----------------+                         +-------------+
 ```
 
 ### PubServer
@@ -68,6 +76,22 @@ Il `CustomerGuiClient` offre la stessa sequenza operativa tramite interfaccia gr
 - uscita dal pub.
 
 Le operazioni di rete della GUI sono eseguite tramite `SwingWorker`, in modo da non bloccare il thread grafico mentre il pub simula la preparazione dell'ordine.
+
+### CustomerWebApp
+
+Il `CustomerWebApp` espone una pagina web locale tramite `HttpServer`, classe inclusa nella libreria standard Java. Non usa framework esterni.
+
+La pagina consente di:
+
+- inserire host, porta e nome cliente;
+- entrare nel pub;
+- caricare il menu;
+- scegliere un piatto da una lista;
+- inviare l'ordine;
+- visualizzare stato, tavolo assegnato e log;
+- uscire dal pub liberando il tavolo.
+
+Le API HTTP della webapp traducono ogni azione del browser in un messaggio del protocollo socket verso il cameriere.
 
 ## Protocollo di comunicazione
 
@@ -196,6 +220,26 @@ Parametri:
 ```bash
 java -cp out it.uniparthenope.reti.pub.client.CustomerClient --host localhost --port 6000 --name Giorgio --item PANINO
 ```
+
+### Esecuzione della webapp
+
+```bash
+java -cp out it.uniparthenope.reti.pub.client.CustomerWebApp --port 7000 --waiter-host localhost --waiter-port 6000 --name Giorgio
+```
+
+In alternativa, dopo la compilazione:
+
+```bash
+make web
+```
+
+Aprire il browser all'indirizzo:
+
+```text
+http://localhost:7000
+```
+
+Nella pagina web il cliente usa i pulsanti `Entra`, `Menu`, `Ordina` ed `Esci`.
 
 ### Esecuzione del cliente interattivo
 

@@ -4,8 +4,9 @@ MAIN_PUB=it.uniparthenope.reti.pub.server.PubServer
 MAIN_WAITER=it.uniparthenope.reti.pub.server.WaiterServer
 MAIN_CLIENT=it.uniparthenope.reti.pub.client.CustomerClient
 MAIN_GUI=it.uniparthenope.reti.pub.client.CustomerGuiClient
+MAIN_WEB=it.uniparthenope.reti.pub.client.CustomerWebApp
 
-.PHONY: all compile clean pub waiter client gui
+.PHONY: all compile clean pub waiter client gui web
 
 all: compile
 
@@ -24,6 +25,9 @@ client: compile
 
 gui: compile
 	java -cp $(OUT_DIR) $(MAIN_GUI)
+
+web: compile
+	java -cp $(OUT_DIR) $(MAIN_WEB)
 
 clean:
 	rm -rf $(OUT_DIR)
