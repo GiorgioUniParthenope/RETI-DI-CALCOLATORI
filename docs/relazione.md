@@ -81,7 +81,7 @@ Il `WaiterServer` rimane in ascolto per i client. Per ogni cliente accettato cre
 
 Il cameriere conserva lo stato della sessione del cliente, in particolare il tavolo assegnato. Quando riceve un ordine valido, apre una connessione verso il pub, invia la richiesta di preparazione e attende la risposta.
 
-La dashboard del cameriere usa lo stesso stato delle sessioni attive. Il cameriere puo' passare da un tavolo all'altro selezionando una scheda tavolo e inviando l'ordine per il tavolo scelto.
+La dashboard del cameriere usa lo stesso stato delle sessioni attive. Il cameriere puo' selezionare un tavolo dalla lista dei tavoli attivi oppure passare al tavolo precedente o successivo con le frecce laterali, quindi inviare l'ordine per il tavolo scelto.
 
 ### CustomerClient
 

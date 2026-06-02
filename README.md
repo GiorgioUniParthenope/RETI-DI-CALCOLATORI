@@ -73,7 +73,7 @@ http://localhost:7200
 
 Le due pagine web sono responsive e possono essere usate anche da tablet o smartphone.
 
-La webapp clienti permette di far entrare piu' clienti: ogni cliente riceve un tavolo diverso. La dashboard cameriere consente di selezionare il tavolo corrente e cambiare tavolo prima di inviare un ordine. La dashboard pub permette di evadere manualmente gli ordini in preparazione.
+La webapp clienti permette di far entrare piu' clienti: ogni cliente riceve un tavolo diverso. La dashboard cameriere consente di scegliere un tavolo attivo da una select e di passare al tavolo precedente o successivo con le frecce laterali prima di inviare un ordine. La dashboard pub permette di evadere manualmente gli ordini in preparazione.
 
 Con `make`:
 
