@@ -69,6 +69,7 @@ public final class CustomerWebApp {
         server.createContext("/api/menu", this::handleMenu);
         server.createContext("/api/order", this::handleOrder);
         server.createContext("/api/exit", this::handleExit);
+        server.createContext("/api/availability", this::handleAvailability);
         server.createContext("/api/health", this::handleHealth);
         server.createContext(WebAssets.HERO_PATH, WebAssets::sendHeroImage);
         server.setExecutor(Executors.newCachedThreadPool());
@@ -91,6 +92,53 @@ public final class CustomerWebApp {
                 + "\"ok\":true,"
                 + "\"activeSessions\":" + sessions.size()
                 + "}");
+    }
+
+    private void handleAvailability(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendText(exchange, 405, "Metodo non consentito");
+            return;
+        }
+
+        BrowserSession statusSession = null;
+        try {
+            statusSession = BrowserSession.connect(defaultWaiterHost, defaultWaiterPort, "Stato sala");
+            Message response = statusSession.sendAndReceive(Message.builder("STATUS").build());
+            try {
+                statusSession.sendAndReceive(Message.builder("EXIT").build());
+            } catch (IOException ignored) {
+                // La richiesta di stato non assegna tavoli: la chiusura resta sicura.
+            }
+
+            if (!"STATUS_OK".equals(response.getCommand())) {
+                sendJson(exchange, 200, "{"
+                        + "\"ok\":false,"
+                        + "\"message\":\"" + jsonEscape(valueOrDefault(response.get("message"), response.toLine())) + "\""
+                        + "}");
+                return;
+            }
+
+            int capacity = parseInt(response.get("capacity"), 0);
+            int occupiedTables = parseInt(response.get("occupiedTables"), 0);
+            int availableTables = parseInt(response.get("availableTables"), 0);
+
+            sendJson(exchange, 200, "{"
+                    + "\"ok\":true,"
+                    + "\"available\":" + (availableTables > 0) + ","
+                    + "\"capacity\":" + capacity + ","
+                    + "\"occupiedTables\":" + occupiedTables + ","
+                    + "\"availableTables\":" + availableTables
+                    + "}");
+        } catch (Exception ex) {
+            sendJson(exchange, 200, "{"
+                    + "\"ok\":false,"
+                    + "\"message\":\"" + jsonEscape(rootMessage(ex)) + "\""
+                    + "}");
+        } finally {
+            if (statusSession != null) {
+                statusSession.close();
+            }
+        }
     }
 
     private void handleEnter(HttpExchange exchange) throws IOException {
@@ -402,7 +450,7 @@ public final class CustomerWebApp {
                 + "</section>"
                 + "<section class=\"panel\">"
                 + "<h2>Clienti ai tavoli</h2>"
-                + "<div class=\"summary\"><div class=\"metric\"><span>Clienti attivi</span><strong id=\"activeCount\">0</strong></div><div class=\"metric\"><span>Tavoli occupati</span><strong id=\"tableCount\">0</strong></div><div class=\"metric\"><span>Ultimo esito</span><strong id=\"lastResult\">-</strong></div></div>"
+                + "<div class=\"summary\"><div class=\"metric\"><span>Clienti attivi</span><strong id=\"activeCount\">0</strong></div><div class=\"metric\"><span>Tavoli occupati</span><strong id=\"tableCount\">-</strong></div><div class=\"metric\"><span>Stato sala</span><strong id=\"availabilityState\">-</strong></div></div>"
                 + "<div class=\"notice\" id=\"notice\">Aggiungi uno o piu' clienti. Ogni cliente ricevera' un tavolo disponibile.</div>"
                 + "<div class=\"cards\" id=\"clientCards\"><div class=\"empty\">Nessun cliente presente.</div></div>"
                 + "</section>"
@@ -415,15 +463,16 @@ public final class CustomerWebApp {
                 + "function esc(v){return String(v||'').replace(/[&<>\\\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}"
                 + "function setBusy(v){busy=v;$('enterBtn').disabled=v;document.querySelectorAll('[data-action]').forEach(b=>b.disabled=v);}"
                 + "async function post(path,body,waiting){setBusy(true);if(waiting)$('notice').textContent=waiting;try{const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:params(body)});return await res.json();}finally{setBusy(false);}}"
-                + "function setAvailability(command){const el=$('lastResult');el.classList.remove('available','unavailable');if(command==='SEAT_GRANTED'){el.textContent='DISPONIBILE';el.classList.add('available');return;}if(command==='SEAT_DENIED'){el.textContent='NON DISPONIBILE';el.classList.add('unavailable');return;}el.textContent='-';}"
-                + "function render(){const list=Object.values(sessions);$('activeCount').textContent=list.length;$('tableCount').textContent=list.length;$('headerStatus').textContent=list.length+' clienti attivi';if(!list.length){cards.innerHTML='<div class=\"empty\">Nessun cliente presente.</div>';return;}cards.innerHTML=list.map(s=>{const options=s.items.length?s.items.map(i=>'<option value=\"'+esc(i.code)+'\">'+esc(i.code)+' - '+esc(i.label)+'</option>').join(''):'<option value=\"\">Carica menu</option>';return '<article class=\"client-card\"><h3>'+esc(s.customer)+'</h3><div class=\"client-meta\">Tavolo '+esc(s.table)+'</div><div class=\"message\">'+esc(s.message||'Cliente seduto. Richiedere il menu.')+'</div><label>Piatto</label><select id=\"item-'+esc(s.id)+'\" '+(!s.items.length?'disabled':'')+'>'+options+'</select><div class=\"card-actions\"><button class=\"secondary\" data-action=\"menu\" data-id=\"'+esc(s.id)+'\">Menu</button><button class=\"order\" data-action=\"order\" data-id=\"'+esc(s.id)+'\" '+(!s.items.length?'disabled':'')+'>Ordina</button><button class=\"neutral\" data-action=\"exit\" data-id=\"'+esc(s.id)+'\">Esci</button></div></article>';}).join('');}"
-                + "async function enterClient(){const data=await post('/api/enter',{name:$('name').value},'Richiesta ingresso in corso...');setAvailability(data.command);$('notice').textContent=data.message||'';if(data.ok&&data.command==='SEAT_GRANTED'){sessions[data.sessionId]={id:data.sessionId,customer:data.customer,table:data.table,items:[],message:data.message};render();}}"
+                + "function updateAvailability(data){const el=$('availabilityState');el.classList.remove('available','unavailable');if(!data||!data.ok){el.textContent='NON RAGGIUNGIBILE';el.classList.add('unavailable');return;}$('tableCount').textContent=data.occupiedTables+' / '+data.capacity;if(data.available){el.textContent='DISPONIBILE';el.classList.add('available');}else{el.textContent='SALA PIENA';el.classList.add('unavailable');}}"
+                + "async function refreshAvailability(){try{const res=await fetch('/api/availability');updateAvailability(await res.json());}catch(e){updateAvailability({ok:false});}}"
+                + "function render(){const list=Object.values(sessions);$('activeCount').textContent=list.length;$('headerStatus').textContent=list.length+' clienti attivi';if(!list.length){cards.innerHTML='<div class=\"empty\">Nessun cliente presente.</div>';return;}cards.innerHTML=list.map(s=>{const options=s.items.length?s.items.map(i=>'<option value=\"'+esc(i.code)+'\">'+esc(i.code)+' - '+esc(i.label)+'</option>').join(''):'<option value=\"\">Carica menu</option>';return '<article class=\"client-card\"><h3>'+esc(s.customer)+'</h3><div class=\"client-meta\">Tavolo '+esc(s.table)+'</div><div class=\"message\">'+esc(s.message||'Cliente seduto. Richiedere il menu.')+'</div><label>Piatto</label><select id=\"item-'+esc(s.id)+'\" '+(!s.items.length?'disabled':'')+'>'+options+'</select><div class=\"card-actions\"><button class=\"secondary\" data-action=\"menu\" data-id=\"'+esc(s.id)+'\">Menu</button><button class=\"order\" data-action=\"order\" data-id=\"'+esc(s.id)+'\" '+(!s.items.length?'disabled':'')+'>Ordina</button><button class=\"neutral\" data-action=\"exit\" data-id=\"'+esc(s.id)+'\">Esci</button></div></article>';}).join('');}"
+                + "async function enterClient(){const data=await post('/api/enter',{name:$('name').value},'Richiesta ingresso in corso...');$('notice').textContent=data.message||'';if(data.ok&&data.command==='SEAT_GRANTED'){sessions[data.sessionId]={id:data.sessionId,customer:data.customer,table:data.table,items:[],message:data.message};render();}refreshAvailability();}"
                 + "async function loadMenu(id){const s=sessions[id];if(!s)return;const data=await post('/api/menu',{sessionId:id},'Caricamento menu tavolo '+s.table+'...');s.message=data.message||s.message;if(data.items)s.items=data.items;$('notice').textContent=data.message||'';render();}"
                 + "async function sendOrder(id){const s=sessions[id];if(!s)return;const item=$('item-'+id).value;if(!item){$('notice').textContent='Selezionare un piatto.';return;}s.message='Ordine inviato. Attendere la preparazione.';render();const data=await post('/api/order',{sessionId:id,item:item},'Ordine tavolo '+s.table+' inviato al pub...');s.message=data.message||s.message;$('notice').textContent=data.message||'';render();}"
-                + "async function exitClient(id){const s=sessions[id];if(!s)return;const data=await post('/api/exit',{sessionId:id},'Uscita tavolo '+s.table+'...');$('notice').textContent=data.message||'Cliente uscito.';delete sessions[id];render();}"
+                + "async function exitClient(id){const s=sessions[id];if(!s)return;const data=await post('/api/exit',{sessionId:id},'Uscita tavolo '+s.table+'...');$('notice').textContent=data.message||'Cliente uscito.';delete sessions[id];render();refreshAvailability();}"
                 + "$('enterBtn').onclick=enterClient;"
                 + "cards.addEventListener('click',e=>{const b=e.target.closest('button[data-action]');if(!b||busy)return;const id=b.dataset.id;if(b.dataset.action==='menu')loadMenu(id);if(b.dataset.action==='order')sendOrder(id);if(b.dataset.action==='exit')exitClient(id);});"
-                + "render();"
+                + "render();refreshAvailability();setInterval(refreshAvailability,2500);"
                 + "</script>"
                 + "</body></html>";
     }

@@ -9,20 +9,15 @@ import it.uniparthenope.reti.pub.common.SocketLine;
 import it.uniparthenope.reti.pub.common.WebAssets;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -117,6 +112,8 @@ public final class WaiterServer {
                 return sendOrderToPub(request, session);
             case "EXIT":
                 return exitPub(session);
+            case "STATUS":
+                return requestPub(Message.builder("STATUS").build());
             case "PING":
                 return Message.builder("PONG").build();
             default:
@@ -224,7 +221,6 @@ public final class WaiterServer {
         HttpServer server = HttpServer.create(new InetSocketAddress(dashboardPort), 0);
         server.createContext("/", this::handleDashboardIndex);
         server.createContext("/api/state", this::handleDashboardState);
-        server.createContext("/api/order", this::handleDashboardOrder);
         server.createContext(WebAssets.HERO_PATH, WebAssets::sendHeroImage);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
@@ -248,47 +244,6 @@ public final class WaiterServer {
         sendJson(exchange, 200, waiterStateJson());
     }
 
-    private void handleDashboardOrder(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            sendJson(exchange, 405, "{\"ok\":false,\"message\":\"Metodo non consentito\"}");
-            return;
-        }
-
-        Map<String, String> form = readForm(exchange);
-        int table = parseInt(form.get("table"), 0);
-        String item = Menu.normalize(form.get("item"));
-
-        if (table <= 0) {
-            sendJson(exchange, 200, "{\"ok\":false,\"message\":\"Selezionare un tavolo\"}");
-            return;
-        }
-
-        if (!Menu.contains(item)) {
-            sendJson(exchange, 200, "{\"ok\":false,\"message\":\"Piatto non presente nel menu\"}");
-            return;
-        }
-
-        ClientSession session = activeTables.get(table);
-        if (session == null) {
-            sendJson(exchange, 200, "{\"ok\":false,\"message\":\"Tavolo libero o non gestito\"}");
-            return;
-        }
-
-        log("Dashboard cameriere: ordine tavolo " + table + ", piatto " + item);
-        Message response = requestPub(Message.builder("PREPARE_ORDER")
-                .put("table", table)
-                .put("item", item)
-                .build());
-
-        sendJson(exchange, 200, "{"
-                + "\"ok\":" + ("ORDER_READY".equals(response.getCommand()) || "ORDER_QUEUED".equals(response.getCommand())) + ","
-                + "\"command\":\"" + jsonEscape(response.getCommand()) + "\","
-                + "\"table\":" + table + ","
-                + "\"customer\":\"" + jsonEscape(session.customerName) + "\","
-                + "\"message\":\"" + jsonEscape(waiterResponseMessage(response)) + "\""
-                + "}");
-    }
-
     private String waiterStateJson() {
         StringBuilder builder = new StringBuilder();
         builder.append("{\"ok\":true,\"tables\":[");
@@ -305,42 +260,8 @@ public final class WaiterServer {
                     .append("}");
         }
 
-        builder.append("],\"menu\":").append(menuJson()).append("}");
+        builder.append("]}");
         return builder.toString();
-    }
-
-    private String menuJson() {
-        StringBuilder builder = new StringBuilder();
-        builder.append("[");
-        String[] entries = Menu.formatForProtocol().split(";");
-        for (int index = 0; index < entries.length; index++) {
-            String[] parts = entries[index].split(":", 2);
-            if (parts.length != 2) {
-                continue;
-            }
-            if (index > 0) {
-                builder.append(",");
-            }
-            builder.append("{")
-                    .append("\"code\":\"").append(jsonEscape(parts[0])).append("\",")
-                    .append("\"label\":\"").append(jsonEscape(parts[1])).append("\"")
-                    .append("}");
-        }
-        builder.append("]");
-        return builder.toString();
-    }
-
-    private String waiterResponseMessage(Message response) {
-        switch (response.getCommand()) {
-            case "ORDER_READY":
-                return "Ordine pronto: " + response.get("item") + " al tavolo " + response.get("table");
-            case "ORDER_REJECTED":
-                return "Ordine rifiutato: " + response.get("reason");
-            case "ERROR":
-                return "Errore: " + response.get("message");
-            default:
-                return response.toLine();
-        }
     }
 
     private String dashboardHtml() {
@@ -353,23 +274,22 @@ public final class WaiterServer {
                 + "<link rel=\"icon\" href=\"" + WebAssets.faviconDataUri() + "\">"
                 + "<style>"
                 + ":root{--bg:#f4f2ed;--ink:#202622;--muted:#65716c;--line:#d8d3c7;--green:#2f6f5e;--blue:#405b84;--coral:#b95d3f;--white:#fff;--soft:#eef2ec;}"
-                + "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;letter-spacing:0}.top{min-height:190px;background:linear-gradient(90deg,rgba(24,35,30,.9),rgba(24,35,30,.55)),url('" + WebAssets.HERO_PATH + "') center/cover;color:#fff;padding:24px 26px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}.top h1{margin:0;font-size:30px}.top p{margin:7px 0 0;color:#e8eee9}.pill{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:9px 12px;color:#ffdfad;font-weight:700}.wrap{max-width:1180px;margin:0 auto;padding:22px;display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:18px}.panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px}.panel h2{margin:0 0 14px;font-size:18px}.switcher{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;gap:10px;align-items:stretch}.arrow{background:var(--blue);font-size:22px;padding:0}.current-table{border:1px solid var(--line);border-radius:8px;padding:14px 16px;background:#eef6f0;min-height:70px;display:flex;justify-content:center;flex-direction:column}.current-table strong{display:block;font-size:20px}.current-table span{display:block;color:var(--muted);font-size:14px;margin-top:5px}.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}label{font-size:13px;font-weight:700}select{width:100%;border:1px solid #c9ccc2;border-radius:6px;padding:10px;font-size:15px}button{width:100%;min-height:44px;border:0;border-radius:6px;background:var(--coral);color:#fff;font-size:15px;font-weight:700;cursor:pointer}button:disabled{background:#aaa;cursor:not-allowed}.notice{border-left:4px solid var(--blue);background:#f6f8fb;padding:14px;line-height:1.45;overflow-wrap:anywhere}.empty{border:1px dashed var(--line);border-radius:8px;padding:20px;color:var(--muted);text-align:center}"
+                + "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;letter-spacing:0}.top{min-height:190px;background:linear-gradient(90deg,rgba(24,35,30,.9),rgba(24,35,30,.55)),url('" + WebAssets.HERO_PATH + "') center/cover;color:#fff;padding:24px 26px;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}.top h1{margin:0;font-size:30px}.top p{margin:7px 0 0;color:#e8eee9}.pill{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.35);border-radius:6px;padding:9px 12px;color:#ffdfad;font-weight:700}.wrap{max-width:780px;margin:0 auto;padding:22px;display:grid;grid-template-columns:1fr;gap:18px}.panel{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px}.panel h2{margin:0 0 14px;font-size:18px}.switcher{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;gap:10px;align-items:stretch}.arrow{background:var(--blue);font-size:22px;padding:0}.current-table{border:1px solid var(--line);border-radius:8px;padding:14px 16px;background:#eef6f0;min-height:70px;display:flex;justify-content:center;flex-direction:column}.current-table strong{display:block;font-size:20px}.current-table span{display:block;color:var(--muted);font-size:14px;margin-top:5px}.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}label{font-size:13px;font-weight:700}select{width:100%;border:1px solid #c9ccc2;border-radius:6px;padding:10px;font-size:15px}button{width:100%;min-height:44px;border:0;border-radius:6px;background:var(--coral);color:#fff;font-size:15px;font-weight:700;cursor:pointer}button:disabled{background:#aaa;cursor:not-allowed}.notice{border-left:4px solid var(--blue);background:#f6f8fb;padding:14px;line-height:1.45;overflow-wrap:anywhere;margin-top:14px}.empty{border:1px dashed var(--line);border-radius:8px;padding:20px;color:var(--muted);text-align:center}"
                 + "@media(max-width:860px){.top{align-items:flex-start;flex-direction:column}.wrap{grid-template-columns:1fr;padding:16px}}@media(max-width:520px){.top{padding:18px 14px}.top h1{font-size:25px}.wrap{padding:12px}.panel{padding:14px}}"
                 + "</style>"
                 + "</head>"
                 + "<body>"
-                + "<header class=\"top\"><div><h1>Banco Cameriere</h1><p>Seleziona il tavolo corrente e cambia ordinazione quando serve.</p></div><div class=\"pill\" id=\"count\">0 tavoli occupati</div></header>"
-                + "<main class=\"wrap\"><section class=\"panel\"><h2>Tavolo corrente</h2><div class=\"field\"><label for=\"tableSelect\">Tavoli attivi</label><select id=\"tableSelect\"></select></div><div class=\"switcher\"><button class=\"arrow\" id=\"prevTable\" title=\"Tavolo precedente\">&#8592;</button><div id=\"currentTable\" class=\"current-table\"></div><button class=\"arrow\" id=\"nextTable\" title=\"Tavolo successivo\">&#8594;</button></div></section><section class=\"panel\"><h2>Ordinazione</h2><div class=\"field\"><label for=\"item\">Piatto</label><select id=\"item\"></select></div><button id=\"orderBtn\" disabled>Invia ordine al pub</button><div class=\"notice\" id=\"notice\" style=\"margin-top:14px\">Selezionare un tavolo.</div></section></main>"
+                + "<header class=\"top\"><div><h1>Banco Cameriere</h1><p>Controllo dei tavoli attivi. Gli ordini restano nel flusso cliente e passano comunque dal cameriere.</p></div><div class=\"pill\" id=\"count\">0 tavoli occupati</div></header>"
+                + "<main class=\"wrap\"><section class=\"panel\"><h2>Tavolo corrente</h2><div class=\"field\"><label for=\"tableSelect\">Tavoli attivi</label><select id=\"tableSelect\"></select></div><div class=\"switcher\"><button class=\"arrow\" id=\"prevTable\" title=\"Tavolo precedente\">&#8592;</button><div id=\"currentTable\" class=\"current-table\"></div><button class=\"arrow\" id=\"nextTable\" title=\"Tavolo successivo\">&#8594;</button></div><div class=\"notice\" id=\"notice\">Selezionare un tavolo.</div></section></main>"
                 + "<script>"
-                + "let selectedTable=null;let state={tables:[],menu:[]};const $=id=>document.getElementById(id);function esc(v){return String(v||'').replace(/[&<>\\\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}function params(obj){const p=new URLSearchParams();Object.keys(obj).forEach(k=>p.append(k,obj[k]||''));return p;}"
+                + "let selectedTable=null;let state={tables:[]};const $=id=>document.getElementById(id);function esc(v){return String(v||'').replace(/[&<>\\\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}"
                 + "function selectedIndex(){return state.tables.findIndex(t=>t.table===selectedTable);}"
                 + "function selectTable(table,showMessage){selectedTable=table;if(showMessage&&table)$('notice').textContent='Tavolo '+table+' selezionato.';draw();}"
                 + "function moveTable(delta){if(!state.tables.length)return;let idx=selectedIndex();if(idx<0)idx=0;idx=(idx+delta+state.tables.length)%state.tables.length;selectTable(state.tables[idx].table,true);}"
-                + "function draw(){ $('count').textContent=state.tables.length+' tavoli occupati';$('item').innerHTML=state.menu.map(i=>'<option value=\"'+esc(i.code)+'\">'+esc(i.code)+' - '+esc(i.label)+'</option>').join('');const tableSelect=$('tableSelect');tableSelect.innerHTML=state.tables.length?state.tables.map(t=>'<option value=\"'+t.table+'\">Tavolo '+t.table+' - '+esc(t.customer)+'</option>').join(''):'<option value=\"\">Nessun tavolo attivo</option>';if(selectedTable)tableSelect.value=String(selectedTable);const current=state.tables.find(t=>t.table===selectedTable);$('currentTable').innerHTML=current?'<strong>Tavolo '+current.table+'</strong><span>'+esc(current.customer)+'</span>':'<div class=\"empty\">Nessun tavolo selezionato.</div>';$('orderBtn').disabled=!selectedTable;$('prevTable').disabled=!state.tables.length;$('nextTable').disabled=!state.tables.length;tableSelect.disabled=!state.tables.length;}"
+                + "function draw(){ $('count').textContent=state.tables.length+' tavoli occupati';const tableSelect=$('tableSelect');tableSelect.innerHTML=state.tables.length?state.tables.map(t=>'<option value=\"'+t.table+'\">Tavolo '+t.table+' - '+esc(t.customer)+'</option>').join(''):'<option value=\"\">Nessun tavolo attivo</option>';if(selectedTable)tableSelect.value=String(selectedTable);const current=state.tables.find(t=>t.table===selectedTable);$('currentTable').innerHTML=current?'<strong>Tavolo '+current.table+'</strong><span>'+esc(current.customer)+'</span>':'<div class=\"empty\">Nessun tavolo selezionato.</div>';$('prevTable').disabled=!state.tables.length;$('nextTable').disabled=!state.tables.length;tableSelect.disabled=!state.tables.length;}"
                 + "async function refresh(){const res=await fetch('/api/state');state=await res.json();state.tables.sort((a,b)=>a.table-b.table);if(selectedTable&&!state.tables.some(t=>t.table===selectedTable))selectedTable=null;if(!selectedTable&&state.tables.length)selectedTable=state.tables[0].table;draw();}"
                 + "$('tableSelect').addEventListener('change',e=>{const table=parseInt(e.target.value,10);if(!Number.isNaN(table))selectTable(table,true);});"
                 + "$('prevTable').onclick=()=>moveTable(-1);$('nextTable').onclick=()=>moveTable(1);"
-                + "$('orderBtn').onclick=async()=>{if(!selectedTable)return;$('orderBtn').disabled=true;$('notice').textContent='Ordine inviato al pub. Attendere evasione.';const res=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:params({table:selectedTable,item:$('item').value})});const data=await res.json();$('notice').textContent=data.message||'Operazione completata';$('orderBtn').disabled=false;refresh();};"
                 + "refresh();setInterval(refresh,1500);"
                 + "</script>"
                 + "</body></html>";
@@ -395,55 +315,6 @@ public final class WaiterServer {
         exchange.sendResponseHeaders(status, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();
-    }
-
-    private Map<String, String> readForm(HttpExchange exchange) throws IOException {
-        String body = readRequestBody(exchange.getRequestBody());
-        Map<String, String> values = new LinkedHashMap<>();
-
-        if (body.trim().isEmpty()) {
-            return values;
-        }
-
-        String[] pairs = body.split("&");
-        for (String pair : pairs) {
-            int separator = pair.indexOf('=');
-            if (separator < 0) {
-                values.put(decode(pair), "");
-            } else {
-                values.put(decode(pair.substring(0, separator)), decode(pair.substring(separator + 1)));
-            }
-        }
-
-        return values;
-    }
-
-    private String readRequestBody(InputStream inputStream) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[4096];
-        int count;
-
-        while ((count = inputStream.read(buffer)) != -1) {
-            output.write(buffer, 0, count);
-        }
-
-        return new String(output.toByteArray(), StandardCharsets.UTF_8);
-    }
-
-    private String decode(String value) {
-        try {
-            return URLDecoder.decode(value, "UTF-8");
-        } catch (UnsupportedEncodingException ex) {
-            throw new IllegalStateException("Codifica UTF-8 non disponibile", ex);
-        }
-    }
-
-    private int parseInt(String value, int defaultValue) {
-        try {
-            return Integer.parseInt(value == null ? String.valueOf(defaultValue) : value);
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
     }
 
     private String jsonEscape(String value) {

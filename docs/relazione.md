@@ -14,7 +14,7 @@ Oltre al client testuale sono presenti un client grafico Swing e una webapp loca
 
 Il `PubServer` espone anche una dashboard HTTP lato server. La dashboard non sostituisce le socket: mostra in modo grafico le operazioni del pub usando ricevute per tavolo.
 
-Il `WaiterServer` espone una dashboard HTTP lato cameriere. Da questa pagina il cameriere vede i tavoli occupati, seleziona il tavolo corrente, puo' cambiare tavolo in qualsiasi momento e invia l'ordinazione scelta al pub.
+Il `WaiterServer` espone una dashboard HTTP lato cameriere. Da questa pagina il cameriere vede i tavoli occupati, seleziona il tavolo corrente e puo' cambiare tavolo in qualsiasi momento. L'ordinazione rimane nel flusso del cliente e viene inoltrata al pub dal cameriere tramite socket.
 
 Le interfacce web sono responsive: il layout si adatta a desktop, tablet e schermi stretti usando griglie fluide e controlli a larghezza piena sui dispositivi mobili.
 
@@ -81,7 +81,7 @@ Il `WaiterServer` rimane in ascolto per i client. Per ogni cliente accettato cre
 
 Il cameriere conserva lo stato della sessione del cliente, in particolare il tavolo assegnato. Quando riceve un ordine valido, apre una connessione verso il pub, invia la richiesta di preparazione e attende la risposta.
 
-La dashboard del cameriere usa lo stesso stato delle sessioni attive. Il cameriere puo' selezionare un tavolo dalla lista dei tavoli attivi oppure passare al tavolo precedente o successivo con le frecce laterali, quindi inviare l'ordine per il tavolo scelto.
+La dashboard del cameriere usa lo stesso stato delle sessioni attive. Il cameriere puo' selezionare un tavolo dalla lista dei tavoli attivi oppure passare al tavolo precedente o successivo con le frecce laterali. Gli ordini non vengono duplicati nella dashboard: arrivano dal flusso cliente e il cameriere li inoltra al pub.
 
 ### CustomerClient
 
@@ -137,6 +137,8 @@ SEAT_GRANTED table=1 availableTables=4
 MENU items=PANINO%3APanino+con+hamburger%3BPIZZA%3APizza+margherita
 ORDER table=1 item=PANINO
 ORDER_READY table=1 item=PANINO preparationMs=1800
+STATUS
+STATUS_OK capacity=5 occupiedTables=1 availableTables=4
 ```
 
 ## Parallelismo
