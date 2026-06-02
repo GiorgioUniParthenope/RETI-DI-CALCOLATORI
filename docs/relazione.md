@@ -14,6 +14,8 @@ Oltre al client testuale sono presenti un client grafico Swing e una webapp loca
 
 Il `PubServer` espone anche una dashboard HTTP lato server. La dashboard non sostituisce le socket: mostra in modo grafico le operazioni del pub usando ricevute per tavolo.
 
+Le interfacce web sono responsive: il layout si adatta a desktop, tablet e schermi stretti usando griglie fluide e controlli a larghezza piena sui dispositivi mobili.
+
 Il cliente non comunica direttamente con il pub. La comunicazione passa dal cameriere, che svolge il ruolo di server intermedio:
 
 1. il cliente chiede al cameriere di entrare;

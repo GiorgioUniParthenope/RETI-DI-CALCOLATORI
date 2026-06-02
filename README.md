@@ -65,6 +65,8 @@ Dashboard lato pub:
 http://localhost:7100
 ```
 
+Le due pagine web sono responsive e possono essere usate anche da tablet o smartphone.
+
 Con `make`:
 
 ```bash
