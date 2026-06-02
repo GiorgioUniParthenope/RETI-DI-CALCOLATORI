@@ -7,6 +7,7 @@ La traccia considerata e' quella per gruppo da 1 studente: ogni cliente occupa u
 - `PubServer`: gestisce i tavoli disponibili e prepara gli ordini.
 - `WaiterServer`: riceve i clienti, chiede al pub se ci sono posti e inoltra gli ordini.
 - `CustomerClient`: simula il cliente che entra, richiede il menu ed effettua un ordine.
+- `CustomerGuiClient`: variante grafica Swing del client cliente.
 
 ## Requisiti
 
@@ -55,6 +56,18 @@ Client interattivo:
 
 ```bash
 java -cp out it.uniparthenope.reti.pub.client.CustomerClient --host localhost --port 6000 --name Giorgio --interactive
+```
+
+Client grafico Swing:
+
+```bash
+java -cp out it.uniparthenope.reti.pub.client.CustomerGuiClient --host localhost --port 6000 --name Giorgio
+```
+
+Con `make`:
+
+```bash
+make gui
 ```
 
 Comandi disponibili nel client interattivo:

@@ -10,6 +10,8 @@ Traccia: Pub
 
 Il progetto realizza una applicazione client/server parallela per la gestione semplificata di un pub. La simulazione segue la traccia per gruppo da 1 studente, quindi ogni tavolo puo' ospitare un solo cliente.
 
+Oltre al client testuale e' presente anche un client grafico Swing. La GUI non cambia l'architettura del sistema: usa gli stessi messaggi e le stesse socket TCP del client da terminale.
+
 Il cliente non comunica direttamente con il pub. La comunicazione passa dal cameriere, che svolge il ruolo di server intermedio:
 
 1. il cliente chiede al cameriere di entrare;
@@ -27,6 +29,7 @@ L'architettura e' composta da tre processi Java distinti.
 ```text
 +----------------+        socket TCP        +----------------+        socket TCP        +----------------+
 | CustomerClient | <-----------------------> |  WaiterServer  | <-----------------------> |   PubServer    |
+| CustomerGui    |                           |                |                           |                |
 +----------------+                           +----------------+                           +----------------+
        client                                      server/client                                server
 ```
@@ -54,6 +57,17 @@ Il `CustomerClient` simula il comportamento del cliente. Puo' essere eseguito in
 
 - automatica, passando il piatto da ordinare con `--item`;
 - interattiva, usando i comandi `enter`, `menu`, `order <codice>` ed `exit`.
+
+Il `CustomerGuiClient` offre la stessa sequenza operativa tramite interfaccia grafica:
+
+- connessione al cameriere;
+- richiesta di ingresso;
+- richiesta del menu;
+- scelta del piatto da una lista;
+- invio dell'ordine;
+- uscita dal pub.
+
+Le operazioni di rete della GUI sono eseguite tramite `SwingWorker`, in modo da non bloccare il thread grafico mentre il pub simula la preparazione dell'ordine.
 
 ## Protocollo di comunicazione
 
@@ -195,6 +209,27 @@ Comandi:
 - `menu`: richiede il menu;
 - `order PANINO`: ordina un piatto;
 - `exit`: esce dal pub e libera il tavolo.
+
+### Esecuzione del client grafico
+
+```bash
+java -cp out it.uniparthenope.reti.pub.client.CustomerGuiClient --host localhost --port 6000 --name Giorgio
+```
+
+In alternativa, dopo la compilazione:
+
+```bash
+make gui
+```
+
+Nella finestra grafica il cliente deve:
+
+1. premere `Connetti`;
+2. premere `Entra`;
+3. premere `Menu`;
+4. selezionare un piatto;
+5. premere `Ordina`;
+6. premere `Esci`.
 
 ## Considerazioni finali
 
